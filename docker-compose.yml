@@ -1,0 +1,102 @@
+services:
+
+  # --- Aplicação PHP-FPM (atende as requisições web via Nginx) ---
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: auditoria-app
+    restart: unless-stopped
+    volumes:
+      - /opt/auditoria/codigo:/var/www/html
+    depends_on:
+      - mysql
+      - ollama
+    networks:
+      - auditoria_net
+    mem_limit: 1g
+
+  # --- Worker da fila (processa sincronização, extração, OCR, IA) ---
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: auditoria-worker
+    restart: unless-stopped
+    command: php artisan queue:work --tries=1 --timeout=900
+    volumes:
+      - /opt/auditoria/codigo:/var/www/html
+    depends_on:
+      - mysql
+      - ollama
+    networks:
+      - auditoria_net
+    mem_limit: 1g
+
+  # --- Agendador (roda o schedule:run a cada minuto, substitui o cron do sistema) ---
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: auditoria-scheduler
+    restart: unless-stopped
+    command: sh -c "while true; do php artisan schedule:run; sleep 60; done"
+    volumes:
+      - /opt/auditoria/codigo:/var/www/html
+    depends_on:
+      - mysql
+    networks:
+      - auditoria_net
+    mem_limit: 256m
+
+  # --- Nginx (serve arquivos estáticos e encaminha .php para o app) ---
+  nginx:
+    image: nginx:stable-alpine
+    container_name: auditoria-nginx
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - /opt/auditoria/codigo:/var/www/html:ro
+      - /opt/auditoria/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
+    networks:
+      - auditoria_net
+    mem_limit: 128m
+
+  # --- MySQL ---
+  mysql:
+    image: mysql:8.0
+    container_name: auditoria-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: "${DB_ROOT_PASSWORD}"
+      MYSQL_DATABASE: "${DB_DATABASE}"
+      MYSQL_USER: "${DB_USERNAME}"
+      MYSQL_PASSWORD: "${DB_PASSWORD}"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - auditoria_net
+    mem_limit: 1g
+
+  # --- Ollama (IA local — nunca publicado para fora, só acessível pelos outros containers) ---
+  ollama:
+    image: ollama/ollama:latest
+    container_name: auditoria-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - auditoria_net
+    mem_limit: 12g
+    cpus: 14
+
+networks:
+  auditoria_net:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  ollama_data:
