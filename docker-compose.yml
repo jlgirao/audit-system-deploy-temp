@@ -93,6 +93,22 @@ services:
     mem_limit: 12g
     cpus: 14
 
+  # --- phpMyAdmin (interface web para gerenciar o MySQL) ---
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: auditoria-phpmyadmin
+    restart: unless-stopped
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+    ports:
+      - "8081:80"
+    depends_on:
+      - mysql
+    networks:
+      - auditoria_net
+    mem_limit: 256m
+
 networks:
   auditoria_net:
     driver: bridge
